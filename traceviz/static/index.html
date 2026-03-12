@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TraceViz - 路径可视化</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="map">
+      <button id="skip-animation" style="display:none"></button>
+    </div>
+    <div id="panel">
+      <div class="panel-header">
+        <h2>TraceViz</h2>
+        <button id="lang-toggle" onclick="setLang(currentLang === 'zh' ? 'en' : 'zh')">EN</button>
+      </div>
+      <div id="target-info"></div>
+      <div id="legend">
+        <span class="legend-item"><i style="background:#9e9e9e"></i><span data-i18n="seg.local">局域网</span></span>
+        <span class="legend-item"><i style="background:#ff9800"></i><span data-i18n="seg.backbone">骨干网</span></span>
+        <span class="legend-item"><i style="background:#2196f3"></i><span data-i18n="seg.transit">中转</span></span>
+        <span class="legend-item"><i style="background:#f44336"></i><span data-i18n="seg.international">国际段</span></span>
+        <span class="legend-item"><i style="background:#4caf50"></i><span data-i18n="seg.target">目标</span></span>
+      </div>
+      <div id="hop-list"></div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
