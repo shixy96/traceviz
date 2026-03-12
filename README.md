@@ -109,6 +109,16 @@ git tag v0.1.0
 git push --tags
 ```
 
+Before the first release, configure PyPI Trusted Publishing for this repository:
+
+1. If `traceviz` does not exist on PyPI yet, add a pending publisher for project `traceviz`.
+2. If it already exists, add a Trusted Publisher for repository `shixy96/traceviz`.
+3. Use workflow file `.github/workflows/release.yml` and environment `pypi`.
+
+PyPI reference:
+- [Publishing with a Trusted Publisher](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
+- [Creating a PyPI project through OIDC](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+
 ## License
 
 [MIT](LICENSE)
