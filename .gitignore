@@ -27,3 +27,6 @@ Thumbs.db
 
 # uv
 .python-version
+
+# Local specs
+docs/superpowers/specs/2026-03-13-release-ci-design.md
