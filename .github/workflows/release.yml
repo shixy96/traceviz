@@ -60,6 +60,38 @@ jobs:
       - name: Build
         run: uv build
 
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+      - name: Create or update GitHub Release
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" dist/* --clobber
+          else
+            gh release create "${{ github.ref_name }}" dist/* \
+              --title "${{ github.ref_name }}" \
+              --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Verify Homebrew tap token
         run: |
           if [ -z "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
@@ -84,23 +116,6 @@ jobs:
             git checkout "$TAP_BRANCH"
           fi
           git push --dry-run origin "HEAD:${TAP_BRANCH}"
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-
-      - name: Create or update GitHub Release
-        run: |
-          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
-            gh release upload "${{ github.ref_name }}" dist/* --clobber
-          else
-            gh release create "${{ github.ref_name }}" dist/* \
-              --title "${{ github.ref_name }}" \
-              --generate-notes
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Generate Homebrew formula
         run: ./scripts/generate-formula.sh "${GITHUB_REF_NAME#v}" "homebrew-tap/Formula/traceviz.rb"
