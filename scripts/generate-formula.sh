@@ -11,7 +11,7 @@ set -euo pipefail
 
 VERSION="${1:-}"
 FORMULA_FILE="${2:-Formula/traceviz.rb}"
-RETRY_ATTEMPTS="${TRACEVIZ_PYPI_RETRY_ATTEMPTS:-6}"
+RETRY_ATTEMPTS="${TRACEVIZ_PYPI_RETRY_ATTEMPTS:-18}"
 RETRY_DELAY_SECONDS="${TRACEVIZ_PYPI_RETRY_DELAY_SECONDS:-5}"
 UV_BIN="${TRACEVIZ_UV_BIN:-uv}"
 PYTHON_BIN="${TRACEVIZ_PYTHON_BIN:-python}"
@@ -56,10 +56,11 @@ retry_with_backoff() {
 }
 
 install_formula_dependencies() {
-  "$UV_BIN" pip install --python "$VENV_DIR/bin/python3" --quiet "setuptools<81" homebrew-pypi-poet "traceviz==${VERSION}" >/dev/null
+  local package_url="$1"
+  "$UV_BIN" pip install --python "$VENV_DIR/bin/python3" --quiet "setuptools<81" homebrew-pypi-poet "$package_url" >/dev/null
 }
 
-fetch_sdist_metadata() {
+fetch_release_metadata() {
   "$PYTHON_BIN" - "$VERSION" <<'PY'
 import json
 import sys
@@ -69,21 +70,48 @@ version = sys.argv[1]
 with urllib.request.urlopen(f"https://pypi.org/pypi/traceviz/{version}/json") as response:
     data = json.load(response)
 
+wheel_url = ""
+sdist_url = ""
+sdist_sha256 = ""
+
 for artifact in data["urls"]:
-    if artifact["packagetype"] == "sdist":
-        print(artifact["url"], artifact["digests"]["sha256"])
-        break
-else:
+    if (
+        artifact["packagetype"] == "bdist_wheel"
+        and artifact["filename"].endswith("py3-none-any.whl")
+        and not wheel_url
+    ):
+        wheel_url = artifact["url"]
+    elif artifact["packagetype"] == "sdist" and not sdist_url:
+        sdist_url = artifact["url"]
+        sdist_sha256 = artifact["digests"]["sha256"]
+
+if not sdist_url:
     raise SystemExit(f"No sdist found for traceviz {version}")
+
+print(wheel_url, sdist_url, sdist_sha256, sep="\t")
 PY
 }
 
 "$UV_BIN" venv "$VENV_DIR" >/dev/null
+RELEASE_METADATA=$(
+  retry_with_backoff \
+  "$RETRY_ATTEMPTS" \
+  "$RETRY_DELAY_SECONDS" \
+  "fetch release metadata for traceviz==${VERSION}" \
+  fetch_release_metadata
+)
+IFS=$'\t' read -r WHEEL_URL SDIST_URL SHA256 <<< "$RELEASE_METADATA"
+
+PACKAGE_URL="$SDIST_URL"
+if [ -n "$WHEEL_URL" ]; then
+  PACKAGE_URL="$WHEEL_URL"
+fi
+
 retry_with_backoff \
   "$RETRY_ATTEMPTS" \
   "$RETRY_DELAY_SECONDS" \
-  "install traceviz==${VERSION} into the formula generator environment" \
-  install_formula_dependencies
+  "install traceviz ${PACKAGE_URL} into the formula generator environment" \
+  install_formula_dependencies "$PACKAGE_URL"
 
 # Generate dependency resource blocks. `poet` also emits the main package as a
 # resource; drop that block because the formula installs it via `url`.
@@ -93,16 +121,6 @@ RESOURCES=$(printf '%s\n' "$RAW_RESOURCES" | awk '
   skip && /^  end$/ {skip=0; next}
   !skip {print}
 ')
-
-# Read sdist metadata directly from the versioned PyPI JSON endpoint.
-SDIST_METADATA=$(
-  retry_with_backoff \
-    "$RETRY_ATTEMPTS" \
-    "$RETRY_DELAY_SECONDS" \
-    "fetch sdist metadata for traceviz==${VERSION}" \
-    fetch_sdist_metadata
-)
-read -r SDIST_URL SHA256 <<< "$SDIST_METADATA"
 
 cat > "$FORMULA_FILE" << RUBY
 class Traceviz < Formula

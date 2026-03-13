@@ -32,6 +32,10 @@ def _write_fake_uv(path: Path) -> None:
         """#!/usr/bin/env bash
 set -euo pipefail
 
+if [ -n "${TRACEVIZ_FAKE_UV_LOG_FILE:-}" ]; then
+  printf '%s\\n' "$*" >> "$TRACEVIZ_FAKE_UV_LOG_FILE"
+fi
+
 if [ "$1" = "venv" ]; then
   mkdir -p "$2/bin"
   : > "$2/bin/python3"
@@ -88,10 +92,12 @@ def test_generate_formula_script_writes_expected_formula(tmp_path):
     fake_bin.mkdir()
 
     _write_fake_uv(fake_bin / "uv")
+    uv_log = tmp_path / "uv.log"
     _write_executable(
         fake_bin / "python",
         """#!/usr/bin/env bash
-printf '%s %s\\n' \
+printf '%s\\t%s\\t%s\\n' \
+  "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl" \
   "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz" \
   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 """,
@@ -101,6 +107,7 @@ printf '%s %s\\n' \
     env = os.environ.copy()
     env["TRACEVIZ_UV_BIN"] = _bash_path(fake_bin / "uv")
     env["TRACEVIZ_PYTHON_BIN"] = _bash_path(fake_bin / "python")
+    env["TRACEVIZ_FAKE_UV_LOG_FILE"] = _bash_path(uv_log)
 
     result = subprocess.run(
         ["bash", _bash_path(SCRIPT), "1.2.3", _bash_path(output)],
@@ -122,9 +129,12 @@ printf '%s %s\\n' \
     assert 'resource "traceviz" do' not in formula
     assert "virtualenv_install_with_resources" in formula
     assert f"Formula written to {output}" in result.stdout
+    uv_commands = uv_log.read_text(encoding="utf-8")
+    assert "traceviz==1.2.3" not in uv_commands
+    assert "traceviz-1.2.3-py3-none-any.whl" in uv_commands
 
 
-def test_generate_formula_script_retries_sdist_lookup(tmp_path):
+def test_generate_formula_script_retries_release_metadata_lookup(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
 
@@ -148,7 +158,8 @@ if [ "$ATTEMPTS" -eq 1 ]; then
   exit 1
 fi
 
-printf '%s %s\\n' \
+printf '%s\\t%s\\t%s\\n' \
+  "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl" \
   "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz" \
   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 """,
@@ -173,4 +184,4 @@ printf '%s %s\\n' \
     assert result.returncode == 0, result.stderr
     assert output.is_file()
     assert attempt_file.read_text(encoding="utf-8") == "2"
-    assert "Attempt 1/2 to fetch sdist metadata for traceviz==1.2.3 failed" in result.stderr
+    assert "Attempt 1/2 to fetch release metadata for traceviz==1.2.3 failed" in result.stderr
