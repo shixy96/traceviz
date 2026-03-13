@@ -16,15 +16,15 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -47,18 +47,43 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
 
       - name: Build
         run: uv build
+
+      - name: Verify Homebrew tap token
+        run: |
+          if [ -z "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not configured"
+            exit 1
+          fi
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: shixy96/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Verify Homebrew tap push access
+        run: |
+          cd homebrew-tap
+          TAP_BRANCH=$(git branch --show-current)
+          if [ -z "$TAP_BRANCH" ]; then
+            TAP_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD)
+            TAP_BRANCH=${TAP_BRANCH#origin/}
+            git checkout "$TAP_BRANCH"
+          fi
+          git push --dry-run origin "HEAD:${TAP_BRANCH}"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -70,3 +95,20 @@ jobs:
             --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Generate Homebrew formula
+        run: ./scripts/generate-formula.sh "${GITHUB_REF_NAME#v}" "homebrew-tap/Formula/traceviz.rb"
+
+      - name: Publish Homebrew formula
+        run: |
+          cd homebrew-tap
+          if [ -z "$(git status --porcelain -- Formula/traceviz.rb)" ]; then
+            echo "Homebrew formula already up to date"
+            exit 0
+          fi
+          TAP_BRANCH=$(git branch --show-current)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/traceviz.rb
+          git commit -m "traceviz ${GITHUB_REF_NAME#v}"
+          git push origin "HEAD:${TAP_BRANCH}"
