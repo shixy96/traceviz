@@ -68,3 +68,13 @@ def test_api_trace_does_not_enable_cross_origin_access():
     resp = client.get("/api/trace", headers={"Origin": "https://evil.example"})
 
     assert "Access-Control-Allow-Origin" not in resp.headers
+
+
+def test_index_serves_static_html():
+    app = create_app([_make_hop()], "example.com")
+    client = app.test_client()
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert "text/html" in resp.content_type
