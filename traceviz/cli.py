@@ -27,14 +27,17 @@ def main():
     parser.add_argument("--demo", action="store_true", help="Use mock data to demo the frontend")
     args = parser.parse_args()
 
-    if args.demo:
-        results, target = _demo_data(args.target)
-        return _serve_or_print(results, target, args)
+    try:
+        if args.demo:
+            results, target = _demo_data(args.target)
+            return _serve_or_print(results, target, args)
 
-    if args.json_output:
-        _run_batch(args)
-    else:
-        _run_streaming(args)
+        if args.json_output:
+            _run_batch(args)
+        else:
+            _run_streaming(args)
+    except KeyboardInterrupt as err:
+        raise SystemExit(130) from err
 
 
 def _run_batch(args):
