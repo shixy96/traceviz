@@ -88,7 +88,9 @@ for artifact in data["urls"]:
 if not sdist_url:
     raise SystemExit(f"No sdist found for traceviz {version}")
 
-print(wheel_url, sdist_url, sdist_sha256, sep="\t")
+print(wheel_url)
+print(sdist_url)
+print(sdist_sha256)
 PY
 }
 
@@ -100,7 +102,15 @@ RELEASE_METADATA=$(
   "fetch release metadata for traceviz==${VERSION}" \
   fetch_release_metadata
 )
-IFS=$'\t' read -r WHEEL_URL SDIST_URL SHA256 <<< "$RELEASE_METADATA"
+mapfile -t RELEASE_FIELDS <<< "$RELEASE_METADATA"
+WHEEL_URL="${RELEASE_FIELDS[0]-}"
+SDIST_URL="${RELEASE_FIELDS[1]-}"
+SHA256="${RELEASE_FIELDS[2]-}"
+
+if [ -z "$SDIST_URL" ] || [ -z "$SHA256" ]; then
+  echo "Release metadata for traceviz==${VERSION} is incomplete" >&2
+  exit 1
+fi
 
 PACKAGE_URL="$SDIST_URL"
 if [ -n "$WHEEL_URL" ]; then

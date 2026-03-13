@@ -87,20 +87,31 @@ exit 1
     )
 
 
+def _write_fake_metadata_script(path: Path, *lines: str) -> None:
+    quoted_lines = ", ".join(repr(line) for line in lines)
+    _write_executable(
+        path,
+        f"""#!/usr/bin/env bash
+python - <<'PY'
+lines = [{quoted_lines}]
+for line in lines:
+    print(line)
+PY
+""",
+    )
+
+
 def test_generate_formula_script_writes_expected_formula(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
 
     _write_fake_uv(fake_bin / "uv")
     uv_log = tmp_path / "uv.log"
-    _write_executable(
+    _write_fake_metadata_script(
         fake_bin / "python",
-        """#!/usr/bin/env bash
-printf '%s\\t%s\\t%s\\n' \
-  "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl" \
-  "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz" \
-  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-""",
+        "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl",
+        "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
 
     output = tmp_path / "generated" / "Formula" / "traceviz.rb"
@@ -158,10 +169,11 @@ if [ "$ATTEMPTS" -eq 1 ]; then
   exit 1
 fi
 
-printf '%s\\t%s\\t%s\\n' \
-  "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl" \
-  "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz" \
-  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+python - <<'PY'
+print("https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl")
+print("https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz")
+print("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+PY
 """,
     )
 
@@ -185,3 +197,40 @@ printf '%s\\t%s\\t%s\\n' \
     assert output.is_file()
     assert attempt_file.read_text(encoding="utf-8") == "2"
     assert "Attempt 1/2 to fetch release metadata for traceviz==1.2.3 failed" in result.stderr
+
+
+def test_generate_formula_script_falls_back_to_sdist_when_wheel_is_missing(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    _write_fake_uv(fake_bin / "uv")
+    uv_log = tmp_path / "uv.log"
+    _write_fake_metadata_script(
+        fake_bin / "python",
+        "",
+        "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz",
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    )
+
+    output = tmp_path / "generated" / "Formula" / "traceviz.rb"
+    env = os.environ.copy()
+    env["TRACEVIZ_UV_BIN"] = _bash_path(fake_bin / "uv")
+    env["TRACEVIZ_PYTHON_BIN"] = _bash_path(fake_bin / "python")
+    env["TRACEVIZ_FAKE_UV_LOG_FILE"] = _bash_path(uv_log)
+
+    result = subprocess.run(
+        ["bash", _bash_path(SCRIPT), "1.2.3", _bash_path(output)],
+        capture_output=True,
+        check=False,
+        cwd=ROOT,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    formula = output.read_text(encoding="utf-8")
+    assert 'url "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz"' in formula
+    assert 'sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' in formula
+    uv_commands = uv_log.read_text(encoding="utf-8")
+    assert "traceviz-1.2.3-py3-none-any.whl" not in uv_commands
+    assert "traceviz-1.2.3.tar.gz" in uv_commands
