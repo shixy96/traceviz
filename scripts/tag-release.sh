@@ -37,7 +37,7 @@ if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
 fi
 
 echo "Generating CHANGELOG.md for ${TAG}..."
-"$CLIFF_BIN" --config .git-cliff.toml --tag "${TAG}" --prepend CHANGELOG.md
+"$CLIFF_BIN" --config .git-cliff.toml --unreleased --tag "${TAG}" --prepend CHANGELOG.md
 
 if git diff --quiet -- CHANGELOG.md; then
   echo "No unreleased changelog entries were generated. Refusing to create ${TAG}." >&2
