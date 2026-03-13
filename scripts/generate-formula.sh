@@ -102,10 +102,20 @@ RELEASE_METADATA=$(
   "fetch release metadata for traceviz==${VERSION}" \
   fetch_release_metadata
 )
-mapfile -t RELEASE_FIELDS <<< "$RELEASE_METADATA"
-WHEEL_URL="${RELEASE_FIELDS[0]-}"
-SDIST_URL="${RELEASE_FIELDS[1]-}"
-SHA256="${RELEASE_FIELDS[2]-}"
+WHEEL_URL=""
+SDIST_URL=""
+SHA256=""
+release_field_index=0
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$release_field_index" in
+    0) WHEEL_URL="$line" ;;
+    1) SDIST_URL="$line" ;;
+    2) SHA256="$line" ;;
+  esac
+  release_field_index=$((release_field_index + 1))
+done <<EOF
+$RELEASE_METADATA
+EOF
 
 if [ -z "$SDIST_URL" ] || [ -z "$SHA256" ]; then
   echo "Release metadata for traceviz==${VERSION} is incomplete" >&2
