@@ -57,7 +57,19 @@ retry_with_backoff() {
 
 install_formula_dependencies() {
   local package_url="$1"
-  "$UV_BIN" pip install --python "$VENV_DIR/bin/python3" --quiet "setuptools<81" homebrew-pypi-poet "$package_url" >/dev/null
+  local fallback_url="${2:-}"
+
+  if "$UV_BIN" pip install --python "$VENV_DIR/bin/python3" --quiet "setuptools<81" homebrew-pypi-poet "$package_url" >/dev/null; then
+    return 0
+  fi
+
+  if [ -n "$fallback_url" ] && [ "$fallback_url" != "$package_url" ]; then
+    echo "Install from ${package_url} failed; falling back to ${fallback_url}" >&2
+    "$UV_BIN" pip install --python "$VENV_DIR/bin/python3" --quiet "setuptools<81" homebrew-pypi-poet "$fallback_url" >/dev/null
+    return 0
+  fi
+
+  return 1
 }
 
 fetch_release_metadata() {
@@ -123,15 +135,17 @@ if [ -z "$SDIST_URL" ] || [ -z "$SHA256" ]; then
 fi
 
 PACKAGE_URL="$SDIST_URL"
+FALLBACK_PACKAGE_URL=""
 if [ -n "$WHEEL_URL" ]; then
   PACKAGE_URL="$WHEEL_URL"
+  FALLBACK_PACKAGE_URL="$SDIST_URL"
 fi
 
 retry_with_backoff \
   "$RETRY_ATTEMPTS" \
   "$RETRY_DELAY_SECONDS" \
   "install traceviz ${PACKAGE_URL} into the formula generator environment" \
-  install_formula_dependencies "$PACKAGE_URL"
+  install_formula_dependencies "$PACKAGE_URL" "$FALLBACK_PACKAGE_URL"
 
 # Generate dependency resource blocks. `poet` also emits the main package as a
 # resource; drop that block because the formula installs it via `url`.

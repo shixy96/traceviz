@@ -46,17 +46,29 @@ fi
 if [ "$1" = "pip" ]; then
   shift
   PYTHON_PATH=""
+  PACKAGE_SPEC=""
   while [ "$#" -gt 0 ]; do
     if [ "$1" = "--python" ]; then
       PYTHON_PATH="$2"
-      break
+      shift 2
+      continue
     fi
+    PACKAGE_SPEC="$1"
     shift
   done
 
   if [ -z "$PYTHON_PATH" ]; then
     echo "missing --python argument" >&2
     exit 1
+  fi
+
+  if [ -n "${TRACEVIZ_FAKE_UV_FAIL_PACKAGE_PATTERN:-}" ]; then
+    case "$PACKAGE_SPEC" in
+      *"${TRACEVIZ_FAKE_UV_FAIL_PACKAGE_PATTERN}"*)
+        echo "simulated install failure for $PACKAGE_SPEC" >&2
+        exit 1
+        ;;
+    esac
   fi
 
   POET_PATH="$(dirname "$PYTHON_PATH")/poet"
@@ -233,4 +245,45 @@ def test_generate_formula_script_falls_back_to_sdist_when_wheel_is_missing(tmp_p
     assert 'sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' in formula
     uv_commands = uv_log.read_text(encoding="utf-8")
     assert "traceviz-1.2.3-py3-none-any.whl" not in uv_commands
+    assert "traceviz-1.2.3.tar.gz" in uv_commands
+
+
+def test_generate_formula_script_falls_back_to_sdist_when_wheel_download_fails(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    _write_fake_uv(fake_bin / "uv")
+    uv_log = tmp_path / "uv.log"
+    wheel_url = "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl"
+    sdist_url = "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz"
+    _write_fake_metadata_script(
+        fake_bin / "python",
+        wheel_url,
+        sdist_url,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    )
+
+    output = tmp_path / "generated" / "Formula" / "traceviz.rb"
+    env = os.environ.copy()
+    env["TRACEVIZ_UV_BIN"] = _bash_path(fake_bin / "uv")
+    env["TRACEVIZ_PYTHON_BIN"] = _bash_path(fake_bin / "python")
+    env["TRACEVIZ_FAKE_UV_LOG_FILE"] = _bash_path(uv_log)
+    env["TRACEVIZ_FAKE_UV_FAIL_PACKAGE_PATTERN"] = "traceviz-1.2.3-py3-none-any.whl"
+
+    result = subprocess.run(
+        ["bash", _bash_path(SCRIPT), "1.2.3", _bash_path(output)],
+        capture_output=True,
+        check=False,
+        cwd=ROOT,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "falling back to" in result.stderr
+    formula = output.read_text(encoding="utf-8")
+    assert f'url "{sdist_url}"' in formula
+    assert 'sha256 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' in formula
+    uv_commands = uv_log.read_text(encoding="utf-8")
+    assert "traceviz-1.2.3-py3-none-any.whl" in uv_commands
     assert "traceviz-1.2.3.tar.gz" in uv_commands
