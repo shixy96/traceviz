@@ -287,3 +287,43 @@ def test_generate_formula_script_falls_back_to_sdist_when_wheel_download_fails(t
     uv_commands = uv_log.read_text(encoding="utf-8")
     assert "traceviz-1.2.3-py3-none-any.whl" in uv_commands
     assert "traceviz-1.2.3.tar.gz" in uv_commands
+
+
+def test_generate_formula_script_retries_when_primary_and_fallback_install_fail(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    _write_fake_uv(fake_bin / "uv")
+    uv_log = tmp_path / "uv.log"
+    _write_fake_metadata_script(
+        fake_bin / "python",
+        "https://files.pythonhosted.org/packages/py3/traceviz/traceviz-1.2.3-py3-none-any.whl",
+        "https://files.pythonhosted.org/packages/source/t/traceviz/traceviz-1.2.3.tar.gz",
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    )
+
+    output = tmp_path / "generated" / "Formula" / "traceviz.rb"
+    env = os.environ.copy()
+    env["TRACEVIZ_UV_BIN"] = _bash_path(fake_bin / "uv")
+    env["TRACEVIZ_PYTHON_BIN"] = _bash_path(fake_bin / "python")
+    env["TRACEVIZ_FAKE_UV_LOG_FILE"] = _bash_path(uv_log)
+    env["TRACEVIZ_FAKE_UV_FAIL_PACKAGE_PATTERN"] = "traceviz-1.2.3"
+    env["TRACEVIZ_PYPI_RETRY_ATTEMPTS"] = "2"
+    env["TRACEVIZ_PYPI_RETRY_DELAY_SECONDS"] = "0"
+
+    result = subprocess.run(
+        ["bash", _bash_path(SCRIPT), "1.2.3", _bash_path(output)],
+        capture_output=True,
+        check=False,
+        cwd=ROOT,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert not output.exists()
+    assert "Attempt 1/2 to install traceviz" in result.stderr
+    assert "Failed to install traceviz" in result.stderr
+    uv_commands = uv_log.read_text(encoding="utf-8").splitlines()
+    install_commands = [command for command in uv_commands if " pip install " in f" {command} "]
+    assert len(install_commands) == 4

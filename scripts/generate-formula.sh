@@ -66,7 +66,7 @@ install_formula_dependencies() {
   if [ -n "$fallback_url" ] && [ "$fallback_url" != "$package_url" ]; then
     echo "Install from ${package_url} failed; falling back to ${fallback_url}" >&2
     "$UV_BIN" pip install --python "$VENV_DIR/bin/python3" --quiet "setuptools<81" homebrew-pypi-poet "$fallback_url" >/dev/null
-    return 0
+    return $?
   fi
 
   return 1
