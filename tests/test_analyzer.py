@@ -2,6 +2,7 @@
 
 from traceviz.analyzer import analyze
 from traceviz.ip_lookup import IPInfo
+from traceviz.ip_quality import IPQuality
 from traceviz.tracer import Hop
 
 
@@ -83,6 +84,15 @@ class TestAnalyze:
         results = analyze(hops, infos, target_ip="3.3.3.3")
         assert results[1].is_timeout
         assert results[1].segment == "local"
+
+    def test_quality_is_copied_to_analyzed_hop(self):
+        quality = IPQuality(risk_level="low", factors={"hosting": True})
+        hops = [_make_hop(1, "1.1.1.1", [5.0])]
+        infos = {"1.1.1.1": _make_info("1.1.1.1", quality=quality)}
+
+        results = analyze(hops, infos, target_ip="1.1.1.1")
+
+        assert results[0].quality is quality
 
     def test_no_target_ip_never_marks_target(self):
         """不传 target_ip 时，不会标记任何跳为 target。"""

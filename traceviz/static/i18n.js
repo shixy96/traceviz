@@ -19,6 +19,8 @@ const messages = {
     "label.org": "运营商:",
     "label.asn": "ASN:",
     "label.backbone": "骨干网:",
+    "label.quality": "IP质量:",
+    "label.risk": "风险",
     "label.latency": "延迟:",
     "label.type": "类型:",
     // 特殊标记
@@ -40,6 +42,8 @@ const messages = {
     "label.org": "ISP:",
     "label.asn": "ASN:",
     "label.backbone": "Backbone:",
+    "label.quality": "IP quality:",
+    "label.risk": "risk",
     "label.latency": "Latency:",
     "label.type": "Type:",
     crossOcean: "🌊 Cross-ocean",

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from .ip_lookup import IPInfo
+from .ip_quality import IPQuality
 from .tracer import Hop
 
 # 延迟突变阈值 (ms)
@@ -38,6 +39,7 @@ class AnalyzedHop:
     is_cross_ocean: bool  # possible cross-ocean hop
     hostname: str = ""
     is_anycast: bool = False
+    quality: IPQuality | None = None
 
 
 def _classify_segment(
@@ -109,6 +111,7 @@ def analyze(
                 is_cross_ocean=is_cross_ocean,
                 hostname=info.hostname if info else "",
                 is_anycast=info.is_anycast if info else False,
+                quality=info.quality if info else None,
             )
         )
 

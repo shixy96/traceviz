@@ -8,6 +8,7 @@ import webbrowser
 
 from .analyzer import LATENCY_JUMP_THRESHOLD, analyze
 from .ip_lookup import IPInfo, lookup_ip, lookup_ips
+from .ip_quality import IPQuality, lookup_ip_qualities, lookup_ip_quality
 from .tracer import Hop, _resolve_target, run_traceroute, stream_traceroute
 
 
@@ -24,12 +25,16 @@ def main():
     parser.add_argument("--wait", type=int, default=2, help="Timeout per hop in seconds (default 2)")
     parser.add_argument("--queries", "-q", type=int, default=2, help="Probes per hop (default 2)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Output JSON only, no server")
-    parser.add_argument("--demo", action="store_true", help="Use mock data to demo the frontend")
+    parser.add_argument("--map", action="store_true", dest="map_output", help="Start the local web map after tracing")
+    parser.add_argument("--quality", action="store_true", help="Run lightweight IP quality checks for public hops")
+    parser.add_argument("--demo", action="store_true", help="Use mock data to demo output without running traceroute")
     args = parser.parse_args()
 
     try:
         if args.demo:
             results, target = _demo_data(args.target)
+            if not args.json_output:
+                _print_analyzed_results(results)
             return _serve_or_print(results, target, args)
 
         if args.json_output:
@@ -56,6 +61,7 @@ def _run_batch(args):
 
     ips = [h.ip for h in hops if h.ip]
     ip_infos = lookup_ips(ips, token=args.token)
+    _apply_quality(ip_infos, args)
     target_ip = _resolve_target(args.target)
     results = analyze(hops, ip_infos, target_ip=target_ip)
     _serve_or_print(results, args.target, args)
@@ -84,6 +90,8 @@ def _run_streaming(args):
             info: IPInfo | None = None
             if hop.ip:
                 info = lookup_ip(hop.ip, token=args.token)
+                if args.quality:
+                    info.quality = lookup_ip_quality(hop.ip)
                 ip_infos[hop.ip] = info
 
             line = _format_hop_line(hop, info, prev_rtt)
@@ -107,6 +115,15 @@ def _run_streaming(args):
 
     results = analyze(hops, ip_infos, target_ip=target_ip)
     _serve_or_print(results, args.target, args)
+
+
+def _apply_quality(ip_infos: dict[str, IPInfo], args) -> None:
+    if not args.quality:
+        return
+
+    qualities = lookup_ip_qualities(list(ip_infos))
+    for ip, quality in qualities.items():
+        ip_infos[ip].quality = quality
 
 
 def _format_hop_line(hop: Hop, info: IPInfo | None, prev_rtt: float | None) -> str:
@@ -145,6 +162,11 @@ def _format_hop_line(hop: Hop, info: IPInfo | None, prev_rtt: float | None) -> s
     if info_parts:
         parts.append("  " + " ".join(info_parts))
 
+    if info and info.quality:
+        quality_label = _format_quality_label(info.quality)
+        if quality_label:
+            parts.append(f"  {quality_label}")
+
     # Latency jump
     if avg is not None and prev_rtt is not None:
         jump = avg - prev_rtt
@@ -157,6 +179,53 @@ def _format_hop_line(hop: Hop, info: IPInfo | None, prev_rtt: float | None) -> s
     return "".join(parts)
 
 
+def _format_quality_label(quality: IPQuality) -> str:
+    labels: list[str] = []
+
+    if quality.risk_level:
+        labels.append(f"risk={quality.risk_level}")
+
+    for factor in ("proxy", "vpn", "tor", "hosting", "abuser", "crawler"):
+        if quality.factors.get(factor) is True:
+            labels.append(factor)
+
+    usage = quality.usage_type.lower()
+    if usage and usage not in labels:
+        labels.append(usage)
+
+    return "[" + ", ".join(labels) + "]" if labels else ""
+
+
+def _print_analyzed_results(results) -> None:
+    prev_rtt: float | None = None
+    for result in results:
+        hop = Hop(
+            hop_number=result.hop_number,
+            ip=result.ip,
+            rtts=[result.avg_rtt] if result.avg_rtt is not None else [],
+            is_timeout=result.is_timeout,
+        )
+        info = IPInfo(
+            ip=result.ip or "",
+            city=result.city,
+            region=result.region,
+            country=result.country,
+            lat=result.lat,
+            lon=result.lon,
+            org=result.org,
+            asn=result.asn,
+            backbone=result.backbone,
+            hostname=result.hostname,
+            is_anycast=result.is_anycast,
+            quality=result.quality,
+        )
+        print(_format_hop_line(hop, info if result.ip else None, prev_rtt))
+        if result.avg_rtt is not None:
+            prev_rtt = result.avg_rtt
+
+    print(f"\nDone: {len(results)} hops")
+
+
 def _serve_or_print(results, target, args):
     """Output JSON or start Flask server."""
     if args.json_output:
@@ -166,9 +235,12 @@ def _serve_or_print(results, target, args):
         print(json.dumps(data, ensure_ascii=False, indent=2))
         return
 
+    if not args.map_output:
+        return
+
     from .server import create_app
 
-    app = create_app(results, target)
+    app = create_app(results, target, quality_enabled=args.quality)
     url = f"http://127.0.0.1:{args.port}"
     print(f"Map ready at {url}")
     print("   Press Ctrl+C to stop")

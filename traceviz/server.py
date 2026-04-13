@@ -10,7 +10,7 @@ from .analyzer import AnalyzedHop
 _static_dir = Path(__file__).parent / "static"
 
 
-def create_app(trace_results: list[AnalyzedHop], target: str) -> Flask:
+def create_app(trace_results: list[AnalyzedHop], target: str, quality_enabled: bool = False) -> Flask:
     app = Flask(__name__, static_folder=str(_static_dir), static_url_path="")
 
     @app.route("/")
@@ -22,6 +22,7 @@ def create_app(trace_results: list[AnalyzedHop], target: str) -> Flask:
         return jsonify(
             {
                 "target": target,
+                "quality_enabled": quality_enabled,
                 "hops": [dataclasses.asdict(h) for h in trace_results],
             }
         )

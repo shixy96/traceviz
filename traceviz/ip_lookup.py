@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import requests
 
+from .ip_quality import IPQuality
+
 _rate_limit_warned = False
 
 # Backbone IP range rules: (CIDR, ASN, carrier, backbone type)
@@ -40,6 +42,7 @@ class IPInfo:
     is_private: bool = False
     hostname: str = ""
     is_anycast: bool = False
+    quality: IPQuality | None = None
 
 
 def _match_backbone(ip: str) -> tuple[str, str, str] | None:
