@@ -15,6 +15,19 @@ let map;
 let markers = [];
 let layers = [];
 let animationController = null;
+let showQualityOnMap = false;
+
+function getQualityLabels(quality) {
+  if (!quality) return [];
+  const labels = [];
+  if (quality.risk_level) labels.push(`${t("label.risk")} ${quality.risk_level}`);
+  const factors = quality.factors || {};
+  ["proxy", "vpn", "tor", "hosting", "abuser", "crawler"].forEach((key) => {
+    if (factors[key] === true) labels.push(key.toUpperCase());
+  });
+  if (quality.usage_type) labels.push(quality.usage_type);
+  return labels;
+}
 
 /** 计算从点A到点B的方位角（度，正北为0，顺时针） */
 function getBearing(lat1, lon1, lat2, lon2) {
@@ -57,6 +70,12 @@ function buildPopup(hop) {
   }
   if (hop.is_anycast) {
     html += `<span class="anycast-tag">Anycast</span><br>`;
+  }
+  if (showQualityOnMap) {
+    const qualityLabels = getQualityLabels(hop.quality);
+    if (qualityLabels.length > 0) {
+      html += `<span class="label">${t('label.quality')}</span> ${qualityLabels.map((label) => `<span class="quality-tag">${escapeHtml(label)}</span>`).join(" ")}<br>`;
+    }
   }
   if (hop.avg_rtt != null) {
     html += `<span class="label">${t('label.latency')}</span> ${hop.avg_rtt.toFixed(1)} ms`;
@@ -460,6 +479,7 @@ async function renderMap(data) {
   document.getElementById("hop-list").innerHTML = "";
 
   const { target, hops } = data;
+  showQualityOnMap = data.quality_enabled === true;
 
   // 目标信息
   document.getElementById("target-info").textContent = t('target', { target, count: hops.length });
@@ -515,6 +535,12 @@ function renderHopList(hops, animated = false) {
     }
     if (hop.is_anycast) {
       detailHtml += ` <span class="anycast-tag">Anycast</span>`;
+    }
+    if (showQualityOnMap) {
+      const qualityLabels = getQualityLabels(hop.quality);
+      if (qualityLabels.length > 0) {
+        detailHtml += ` ${qualityLabels.map((label) => `<span class="quality-tag">${escapeHtml(label)}</span>`).join(" ")}`;
+      }
     }
     if (hop.is_cross_ocean && hop.latency_jump != null) {
       detailHtml += ` <span class="cross-ocean">${t('crossOceanSidebar')} (+${hop.latency_jump.toFixed(1)}ms)</span>`;

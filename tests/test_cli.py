@@ -17,6 +17,7 @@ from traceviz.cli import (
     main,
 )
 from traceviz.ip_lookup import IPInfo
+from traceviz.ip_quality import IPQuality
 from traceviz.tracer import Hop
 
 
@@ -30,6 +31,8 @@ def _make_args(**overrides):
         "wait": 2,
         "queries": 2,
         "json_output": False,
+        "map_output": False,
+        "quality": False,
         "demo": False,
     }
     args.update(overrides)
@@ -137,6 +140,18 @@ def test_main_routes_json_output_to_batch_runner():
     assert args.json_output is True
 
 
+def test_main_parses_map_argument():
+    args = _parse_streaming_args(["traceviz", "example.com", "--map"])
+
+    assert args.map_output is True
+
+
+def test_main_parses_quality_argument():
+    args = _parse_streaming_args(["traceviz", "example.com", "--quality"])
+
+    assert args.quality is True
+
+
 def test_main_parses_demo_argument():
     demo_results = [_make_analyzed_hop(ip="1.1.1.1")]
 
@@ -221,6 +236,30 @@ def test_run_batch_analyzes_hops_and_delegates_output(capsys):
     assert "Tracing example.com, max 5 hops, ICMP mode..." in captured.err
 
 
+def test_run_batch_applies_quality_when_enabled(capsys):
+    args = _make_args(json_output=True, quality=True)
+    hops = [Hop(1, "1.1.1.1", [5.0])]
+    info = IPInfo(ip="1.1.1.1")
+    ip_infos = {"1.1.1.1": info}
+    quality = IPQuality(risk_level="high", factors={"vpn": True})
+    analyzed = [_make_analyzed_hop(quality=quality)]
+
+    with (
+        patch("traceviz.cli.run_traceroute", return_value=hops),
+        patch("traceviz.cli.lookup_ips", return_value=ip_infos),
+        patch("traceviz.cli.lookup_ip_qualities", return_value={"1.1.1.1": quality}) as lookup_quality,
+        patch("traceviz.cli._resolve_target", return_value="1.1.1.1"),
+        patch("traceviz.cli.analyze", return_value=analyzed),
+        patch("traceviz.cli._serve_or_print") as serve_or_print,
+    ):
+        _run_batch(args)
+
+    lookup_quality.assert_called_once_with(["1.1.1.1"])
+    assert info.quality is quality
+    serve_or_print.assert_called_once_with(analyzed, "example.com", args)
+    assert "Tracing example.com" in capsys.readouterr().err
+
+
 def test_run_batch_exits_with_error_when_traceroute_fails(capsys):
     args = _make_args()
 
@@ -286,6 +325,29 @@ def test_run_streaming_formats_lines_trims_trailing_timeouts_and_serves(capsys):
     assert "(+125.0 \U0001f30a)" in captured.out
 
 
+def test_run_streaming_applies_quality_when_enabled(capsys):
+    args = _make_args(quality=True)
+    hops = [Hop(1, "1.1.1.1", [5.0])]
+    info = IPInfo(ip="1.1.1.1", org="Cloudflare", asn="AS13335")
+    quality = IPQuality(risk_level="low", usage_type="hosting", factors={"hosting": True})
+    analyzed = [_make_analyzed_hop(ip="1.1.1.1", quality=quality)]
+
+    with (
+        patch("traceviz.cli._resolve_target", return_value="1.1.1.1"),
+        patch("traceviz.cli.stream_traceroute", return_value=iter(hops)),
+        patch("traceviz.cli.lookup_ip", return_value=info),
+        patch("traceviz.cli.lookup_ip_quality", return_value=quality) as lookup_quality,
+        patch("traceviz.cli.analyze", return_value=analyzed),
+        patch("traceviz.cli._serve_or_print") as serve_or_print,
+    ):
+        _run_streaming(args)
+
+    lookup_quality.assert_called_once_with("1.1.1.1")
+    assert info.quality is quality
+    serve_or_print.assert_called_once_with(analyzed, "example.com", args)
+    assert "[risk=low, hosting]" in capsys.readouterr().out
+
+
 def test_run_streaming_exits_with_error_when_traceroute_fails(capsys):
     args = _make_args()
 
@@ -347,6 +409,18 @@ def test_format_hop_line_formats_negative_jump_and_missing_rtt():
     assert "ms" not in blank_rtt_line
 
 
+def test_format_hop_line_formats_quality_label():
+    hop = Hop(7, "203.0.113.7", [150.0])
+    info = IPInfo(
+        ip="203.0.113.7",
+        quality=IPQuality(risk_level="very_high", usage_type="hosting", factors={"vpn": True, "hosting": True}),
+    )
+
+    line = _format_hop_line(hop, info, prev_rtt=None)
+
+    assert "[risk=very_high, vpn, hosting]" in line
+
+
 def test_serve_or_print_outputs_json_payload(capsys):
     args = _make_args(json_output=True)
     results = [_make_analyzed_hop()]
@@ -356,10 +430,22 @@ def test_serve_or_print_outputs_json_payload(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["target"] == "example.com"
     assert payload["hops"][0]["ip"] == "8.8.8.8"
+    assert payload["hops"][0]["quality"] is None
+
+
+def test_serve_or_print_skips_server_without_map_output(capsys):
+    args = _make_args(port=9900)
+    results = [_make_analyzed_hop()]
+
+    with patch("traceviz.server.create_app") as create_app:
+        _serve_or_print(results, "example.com", args)
+
+    create_app.assert_not_called()
+    assert capsys.readouterr().out == ""
 
 
 def test_serve_or_print_starts_server_and_browser_timer(capsys):
-    args = _make_args(port=9900)
+    args = _make_args(port=9900, map_output=True, quality=True)
     results = [_make_analyzed_hop()]
     app = Mock()
     timer = Mock()
@@ -370,7 +456,7 @@ def test_serve_or_print_starts_server_and_browser_timer(capsys):
     ):
         _serve_or_print(results, "example.com", args)
 
-    create_app.assert_called_once_with(results, "example.com")
+    create_app.assert_called_once_with(results, "example.com", quality_enabled=True)
     timer_cls.assert_called_once_with(1.5, sys.modules["traceviz.cli"].webbrowser.open, args=["http://127.0.0.1:9900"])
     timer.start.assert_called_once_with()
     app.run.assert_called_once_with(host="127.0.0.1", port=9900, debug=False)

@@ -56,8 +56,10 @@ def test_api_trace_returns_expected_payload():
                 "is_cross_ocean": False,
                 "hostname": "dns.google",
                 "is_anycast": True,
+                "quality": None,
             }
         ],
+        "quality_enabled": False,
     }
 
 
@@ -68,6 +70,15 @@ def test_api_trace_does_not_enable_cross_origin_access():
     resp = client.get("/api/trace", headers={"Origin": "https://evil.example"})
 
     assert "Access-Control-Allow-Origin" not in resp.headers
+
+
+def test_api_trace_includes_quality_enabled_config():
+    app = create_app([_make_hop()], "example.com", quality_enabled=True)
+    client = app.test_client()
+
+    resp = client.get("/api/trace")
+
+    assert resp.get_json()["quality_enabled"] is True
 
 
 def test_index_serves_static_html():

@@ -1,7 +1,7 @@
 # TraceViz
 
-**Visualize traceroute paths on a world map.**
-Traceroute 路径可视化工具 —— 在世界地图上展示网络数据包的旅行路径。
+**Trace network paths from the CLI, with an optional web map.**
+Traceroute 路径分析工具 —— 默认在终端输出路径，可按需打开世界地图展示。
 
 [![PyPI](https://img.shields.io/pypi/v/traceviz)](https://pypi.org/project/traceviz/)
 ![Python](https://img.shields.io/badge/Python-3.12+-blue)
@@ -13,9 +13,11 @@ Traceroute 路径可视化工具 —— 在世界地图上展示网络数据包�
 
 ## Features / 功能特性
 
-- Run traceroute and visualize each hop on an interactive world map
+- Run traceroute and print each hop in the CLI
+- Optional interactive world map with `--map`
 - Auto-detect Chinese ISP backbone segments (ChinaTelecom 163/CN2, ChinaUnicom CUNet, ChinaMobile CMI, etc.)
 - Latency spike detection — automatically flag possible transoceanic hops
+- Optional lightweight IP quality checks with `--quality`
 - Cross-platform: macOS / Linux / Windows
 - ICMP and UDP probe modes
 - Pure JSON output for scripting
@@ -37,11 +39,17 @@ pip install traceviz
 ## Usage / 使用
 
 ```bash
-# Basic — trace to google.com and open the map in your browser
+# Basic — trace to google.com in the CLI
 traceviz google.com
+
+# Open the web map after tracing
+traceviz google.com --map
 
 # ICMP mode (better penetration, requires sudo/admin)
 sudo traceviz google.com --icmp
+
+# Add lightweight IP quality labels
+traceviz google.com --quality
 
 # JSON-only output
 traceviz google.com --json
@@ -68,14 +76,17 @@ traceviz google.com --token YOUR_TOKEN
 | `--wait` | Timeout per hop (seconds) | 2 |
 | `-q, --queries` | Probes per hop | 2 |
 | `--json` | JSON output only, no server | off |
+| `--map` | Start the local web map after tracing | off |
+| `--quality` | Run lightweight IP quality checks for public hops | off |
 | `--demo` | Use simulated demo data | off |
 
 ## How It Works / 工作原理
 
 1. **Traceroute** — runs the system `traceroute` / `tracert` command and parses each hop's IP and RTT
 2. **IP Lookup** — queries ipinfo.io for geolocation and ASN data; matches built-in backbone rules
-3. **Analysis** — detects latency spikes (>100 ms jump → possible ocean crossing) and classifies network segments
-4. **Visualization** — starts a local Flask server and renders the path on a Leaflet world map
+3. **Quality Check** — optionally queries ipapi.is for lightweight risk, proxy, VPN, Tor, hosting, abuse, and crawler signals
+4. **Analysis** — detects latency spikes (>100 ms jump → possible ocean crossing) and classifies network segments
+5. **Visualization** — optionally starts a local Flask server and renders the path on a Leaflet world map when `--map` is set
 
 ## Requirements / 系统要求
 
